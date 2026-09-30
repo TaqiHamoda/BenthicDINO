@@ -95,48 +95,6 @@ dino_out, ibot_out, stage_features = run_inference_heads(backbone, dino_head, ib
 
 The `notebooks/` directory contains full evaluation pipelines (shipwreck segmentation, sediment classification) and feature-space analyses (PCA, kNN, SVD).
 
-# BenthicDINO
-
-**Physics-Informed Self-Distillation for View-Invariant Side-Scan Sonar Representations**
-
-Official implementation of [BenthicDINO: Physics-Informed Self-Distillation for View-Invariant Side-Scan Sonar Representations](https://arxiv.org/abs/2608.23215) (Hamoda, Rajani &amp; Gracias, 2026).
-
-BenthicDINO is a self-supervised learning framework for **side-scan sonar (SSS) imagery**. It adapts the DINO/iBOT family of self-distillation methods to underwater sonar, where annotations are scarce and expensive, producing general-purpose 2D features for downstream benthic tasks such as shipwreck detection and sediment segmentation.
-
-## ✨ Highlights
-
-- **Sonar-physics-aware augmentations** — speckle noise, TVG attenuation (propagation-loss simulation), and gain/dynamic-range jitter. Blur and aspect-ratio distortion are deliberately avoided since they break the physics of sonar imaging.
-- **Sparse ConvNeXtV2 backbone** — masked patches are processed truly sparsely with submanifold sparse convolutions ([spconv](https://github.com/traveller59/spconv)), with a lightweight MAE-style decoder to inject context into masked sites.
-- **Multi-scale hypercolumn features** — an MLP-based fusion of all encoder stages yields a semantically compressed, high-resolution patch representation.
-- **Composite objective** — DINO (self-distillation) + iBOT (masked patch distillation) + Gram (texture matching against a frozen teacher) + KoLeo (feature uniformity), with an optional HSIC-based term that encourages **independence from nadir distance** to remove range-dependent artifacts.
-- **Two-stage training** — FCMAE masked-reconstruction pretraining, followed by full self-distillation.
-
-## 🗂️ Repository Structure
-
-```
-BenthicDINO/
-├── train.py                  # Stage 2: DINO + iBOT self-distillation training
-├── pretrain.py               # Stage 1: FCMAE masked-reconstruction pretraining
-├── src/
-│   ├── dino.py               # Sparse ConvNeXtV2 backbone, DINOHead, ReconstructionHead
-│   ├── dataset.py            # Sonar dataset, multi-crop transforms, block masking
-│   ├── losses.py             # DINO, iBOT, Gram, KoLeo, HSIC losses
-│   └── utils.py              # Inference helpers, mIoU evaluation, model loading
-├── scripts/
-│   ├── process_benthicat.py  # XTF sonar → normalized tiles + nadir-distance maps
-│   └── process_shipwrecks.py # AI4Shipwrecks labeled data → image/mask crops
-└── notebooks/                # Evaluation & feature-space analysis
-    ├── ai4shipwrecks.ipynb   # Shipwreck segmentation evaluation
-    ├── s3seg.ipynb           # Sediment classification evaluation
-    ├── augmentations.ipynb   # Augmentation visualization
-    ├── feature_space.ipynb   # Feature-space analysis
-    ├── knn_vis.ipynb         # kNN visualization (faiss)
-    ├── pca_vis.ipynb         # PCA visualization
-    ├── svd_features.ipynb    # SVD feature analysis
-    ├── sas_test.ipynb        # Synthetic aperture sonar tests
-    └── graphs.ipynb          # Training curves
-```
-
 ## 🏋️ Pretrained Weights
 
 Pretrained model weights are available for download:
