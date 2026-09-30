@@ -177,4 +177,4 @@ If you find this work useful, please cite:
 
 ## 📄 License
 
-This project is released under the MIT License. See [LICENSE](LICENSE) for details.
+This project is released under the GNU General Public License v3.0. See [LICENSE](LICENSE) for details.
