@@ -18,8 +18,8 @@ MASK_DIR = DATA_DIR / "labelled/AI4Shipwrecks/masks/"
 
 CROP_DIM = 640  # Original shape of the sonar tiles
 
-BG_SAMPLE_COUNT = 10
-SHIP_SAMPLE_COUNT = 5
+BG_SAMPLE_COUNT = 15
+SHIP_SAMPLE_COUNT = 30
 
 
 def get_locs(mask: np.ndarray, sample_count: int) -> List[Tuple[int, int]]:

@@ -2,7 +2,6 @@ from typing import Tuple, List
 
 import numpy as np
 import torch
-from sklearn.metrics import confusion_matrix
 
 import matplotlib.pyplot as plt
 
@@ -25,48 +24,120 @@ def show_images(images: List[Tuple[np.ndarray, str]], num_images: int = 5, norma
     plt.show()
 
 
-def print_iou(y_true, y_pred, labels):
-    cm = confusion_matrix(y_true, y_pred, labels=labels)
+def fast_confusion_matrix(y_true, y_pred, num_classes):
+    # Flatten arrays (crucial if passing 2D/3D image masks directly)
+    y_true = np.asarray(y_true).ravel()
+    y_pred = np.asarray(y_pred).ravel()
+    
+    # Filter out pixels not in your standard class range (like ignore_index)
+    mask = (y_true >= 0) & (y_true < num_classes)
+    
+    # Map 2D coordinates (true_class, pred_class) to a 1D index and count
+    hist = np.bincount(
+        num_classes * y_true[mask].astype(int) + y_pred[mask].astype(int),
+        minlength=num_classes ** 2
+    ).reshape(num_classes, num_classes)
+    
+    return hist
 
-    # Normalize row-wise (True labels) to handle large scale disparities
-    row_sums = cm.sum(axis=1, keepdims=True)
+
+def generate_evaluation_report(y_true, y_pred, labels=None, digits=3):
+    """
+    Lightning-fast unified evaluation report returning a formatted string.
+    Includes Normalized Confusion Matrix, Classification Metrics, and IoU.
+    """
+    if labels is None:
+        num_classes = int(max(np.max(y_true), np.max(y_pred))) + 1
+        str_labels = [str(i) for i in range(num_classes)]
+    else:
+        num_classes = len(labels)
+        str_labels = [str(l) for l in labels]
+
+    # Get the N x N confusion matrix
+    cm = fast_confusion_matrix(y_true, y_pred, num_classes)
+    
+    # Extract core components
+    tp = np.diag(cm)
+    support = cm.sum(axis=1)       # Row sums (True labels)
+    pred_totals = cm.sum(axis=0)   # Column sums (Predicted labels)
+    
+    # Calculate Normalized Confusion Matrix
     cm_norm = np.divide(
         cm.astype(float),
-        row_sums,
+        support[:, np.newaxis],
         out=np.zeros_like(cm, dtype=float),
-        where=row_sums != 0
+        where=support[:, np.newaxis] != 0
     )
 
-    print("Confusion Matrix (Normalized):")
+    # Calculate Vectorized Metrics
+    precision = np.divide(tp, pred_totals, out=np.zeros_like(tp, dtype=float), where=pred_totals != 0)
+    recall = np.divide(tp, support, out=np.zeros_like(tp, dtype=float), where=support != 0)
+    
+    f1_denom = precision + recall
+    f1 = np.divide(2 * precision * recall, f1_denom, out=np.zeros_like(tp, dtype=float), where=f1_denom != 0)
+    
+    union = support + pred_totals - tp
+    iou = np.divide(tp, union, out=np.zeros_like(tp, dtype=float), where=union != 0)
 
-    header = f"{'True / Pred':>12} | " + " ".join([f"{str(label):>7}" for label in labels])
-    print(header)
-    print("-" * len(header))
+    # Build the Output String
+    out = []
+    
+    # --- Part A: Normalized Confusion Matrix ---
+    out.append("Confusion Matrix (Normalized):")
+    
+    # Dynamic header spacing based on label lengths
+    label_widths = [max(len(l), 7) for l in str_labels]
+    header_labels = " ".join([f"{l:>{w}}" for l, w in zip(str_labels, label_widths)])
+    header = f"{'True / Pred':>15} | {header_labels}"
+    
+    out.append(header)
+    out.append("-" * len(header))
+    
+    for i, row_label in enumerate(str_labels):
+        row_str = " ".join([f"{val:>{w}.3f}" for val, w in zip(cm_norm[i], label_widths)])
+        out.append(f"{row_label:>15} | {row_str}")
+        
+    out.append("-" * len(header))
+    out.append("\n")
 
-    # Print each row with normalized values to 3 decimal places
-    for i, row_label in enumerate(labels):
-        row_str = " ".join([f"{val:>7.3f}" for val in cm_norm[i]])
-        print(f"{str(row_label):>12} | {row_str}")
-
-    print("-" * len(header))
-
-    # --- Calculate and Print IoU on raw counts ---
-    intersection = np.diag(cm)
-    union = cm.sum(axis=1) + cm.sum(axis=0) - intersection
-
-    iou = np.divide(
-        intersection,
-        union,
-        out=np.zeros_like(intersection, dtype=float),
-        where=union != 0
-    )
-
-    print("\nIoU per class:")
-    for label, val in zip(labels, iou):
-        print(f"  Class {str(label):<5}: {val:.3f}")
-
-    print("-" * 20)
-    print(f"Mean IoU (mIoU) : {np.mean(iou):.3f}")
+    # --- Part B: Unified Classification & IoU Report ---
+    name_width = max([len(l) for l in str_labels] + [12]) # 12 accommodates 'weighted avg'
+    
+    head_fmt = f"{{:>{name_width}}}  {{:>9}}  {{:>9}}  {{:>9}}  {{:>9}}  {{:>9}}"
+    row_fmt  = f"{{:>{name_width}}}  {{:>9.{digits}f}}  {{:>9.{digits}f}}  {{:>9.{digits}f}}  {{:>9.{digits}f}}  {{:>9}}"
+    
+    out.append("Segmentation & Classification Report:")
+    out.append(head_fmt.format("", "precision", "recall", "f1-score", "iou", "support"))
+    out.append("")
+    
+    # Per-class metrics
+    for i, label in enumerate(str_labels):
+        out.append(row_fmt.format(label, precision[i], recall[i], f1[i], iou[i], int(support[i])))
+        
+    out.append("")
+    
+    # Global metrics
+    total_support = np.sum(support)
+    accuracy = np.sum(tp) / total_support if total_support > 0 else 0.0
+    
+    # Accuracy row (only displays in the iou and support columns to match sklearn layout)
+    out.append(f"{'accuracy':>{name_width}}  {'':>9}  {'':>9}  {'':>9}  {accuracy:>9.{digits}f}  {int(total_support):>9}")
+    
+    # Macro average (Mean IoU / mIoU is naturally calculated here)
+    out.append(row_fmt.format("macro avg", np.mean(precision), np.mean(recall), np.mean(f1), np.mean(iou), int(total_support)))
+    
+    # Weighted average
+    if total_support > 0:
+        wp = np.average(precision, weights=support)
+        wr = np.average(recall, weights=support)
+        wf1 = np.average(f1, weights=support)
+        wiou = np.average(iou, weights=support)
+    else:
+        wp = wr = wf1 = wiou = 0.0
+        
+    out.append(row_fmt.format("weighted avg", wp, wr, wf1, wiou, int(total_support)))
+    
+    return "\n".join(out), (cm_norm, precision, recall, f1, iou, support)
 
 
 def load_backbone(weights_path: str, device = torch.device("cuda")) -> ConvNeXtV2:
